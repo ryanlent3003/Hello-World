@@ -1,0 +1,159 @@
+from pathlib import Path
+import datetime
+import warnings
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+from pynhd import NLDI
+
+from supporting_scripts import SNOTEL_Analyzer, dataprocessing, getData
+
+warnings.filterwarnings("ignore")
+
+
+USGS_GAGE_ID = "10172200"  # Red Butte Creek at Fort Douglas, UT
+WY = 2019
+DOI = "04-01"
+WATERSHED = "Red Butte"
+AOI_NAME = "Above Fort Douglas"
+MAX_SITES = 4
+BUFFER_KM_IF_NO_BASIN = 20
+
+
+def to_date_string(value):
+	if isinstance(value, str):
+		return value
+	return datetime.datetime.strftime(value, "%Y-%m-%d")
+
+
+def get_state_abbr_from_code(code, state_name):
+	if isinstance(code, str) and "_" in code:
+		parts = code.split("_")
+		if len(parts) >= 2 and len(parts[1]) == 2:
+			return parts[1].upper()
+
+	mapping = {
+		"Utah": "UT",
+		"California": "CA",
+		"Colorado": "CO",
+		"Wyoming": "WY",
+		"Idaho": "ID",
+		"Nevada": "NV",
+		"Arizona": "AZ",
+		"New Mexico": "NM",
+		"Montana": "MT",
+		"Oregon": "OR",
+		"Washington": "WA",
+	}
+	return mapping.get(state_name, "UT")
+
+
+def main():
+	data_dir = Path("files/SNOTEL")
+	data_dir.mkdir(parents=True, exist_ok=True)
+
+	print("Loading station inventory...")
+	stations = gpd.read_file(
+		"https://raw.githubusercontent.com/egagli/snotel_ccss_stations/main/all_stations.geojson"
+	).set_index("code")
+	stations = stations[stations["csvData"] == True].copy()
+
+	nldi = NLDI()
+	print(f"Getting NWIS feature for USGS-{USGS_GAGE_ID}...")
+	site_feature = nldi.getfeature_byid("nwissite", f"USGS-{USGS_GAGE_ID}")
+
+	basin = None
+	try:
+		print("Attempting NLDI basin delineation...")
+		basin = nldi.get_basins(USGS_GAGE_ID)
+		aoi = basin
+		print("Using NLDI basin polygon.")
+	except Exception:
+		print(
+			f"NLDI basin unavailable for {USGS_GAGE_ID}. Using a {BUFFER_KM_IF_NO_BASIN} km buffer around gage."
+		)
+		aoi = site_feature.to_crs(5070).copy()
+		aoi["geometry"] = aoi.geometry.buffer(BUFFER_KM_IF_NO_BASIN * 1000)
+		aoi = aoi.to_crs(stations.crs)
+
+	gdf_in_aoi = stations[stations.geometry.within(aoi.geometry.iloc[0])].copy()
+
+	if gdf_in_aoi.empty:
+		print("No stations found in AOI polygon. Falling back to nearest stations.")
+		site_proj = site_feature.to_crs(5070)
+		stations_proj = stations.to_crs(5070)
+		stations_proj["dist_m"] = stations_proj.geometry.distance(site_proj.geometry.iloc[0])
+		gdf_in_aoi = stations_proj.nsmallest(MAX_SITES, "dist_m").to_crs(stations.crs)
+
+	gdf_in_aoi = gdf_in_aoi.reset_index(drop=False)
+	gdf_in_aoi["code"] = gdf_in_aoi["code"].astype(str).str.split("_").str[0]
+	gdf_in_aoi["beginDate"] = [to_date_string(value) for value in gdf_in_aoi["beginDate"]]
+	gdf_in_aoi["endDate"] = [to_date_string(value) for value in gdf_in_aoi["endDate"]]
+
+	if len(gdf_in_aoi) > MAX_SITES:
+		gdf_in_aoi = gdf_in_aoi.sort_values("elevation_m", ascending=False).head(MAX_SITES).copy()
+
+	print("Selected stations:")
+	print(gdf_in_aoi[["code", "name", "state", "network", "beginDate", "endDate"]].to_string(index=False))
+
+	for _, row in gdf_in_aoi.iterrows():
+		code = row["code"]
+		state_abbr = get_state_abbr_from_code(code, row["state"])
+		getData.getSNOTELData(
+			SiteName=row["name"],
+			SiteID=code,
+			StateAbb=state_abbr,
+			StartDate=row["beginDate"],
+			EndDate=row["endDate"],
+			OutputFolder=str(data_dir),
+		)
+
+	sites = list(gdf_in_aoi["code"])
+	sitedict = {}
+	for site in sites:
+		state_abbr = get_state_abbr_from_code(site, gdf_in_aoi[gdf_in_aoi["code"] == site]["state"].iloc[0])
+		df_site = dataprocessing.processSNOTEL(site, state_abbr, WY)
+		df_site = df_site[df_site.index.notna()].copy()
+		df_site.index = df_site.index.astype(str)
+		df_site = df_site[df_site.index.str.match(r"^\d{2}-\d{2}$", na=False)].copy()
+		sitedict[site] = df_site
+
+	wy_col = f"{WY}_SWE_in"
+	valid_sites = []
+	for site, df_site in sitedict.items():
+		has_doi = DOI in df_site.index
+		has_wy_col = wy_col in df_site.columns
+		if has_wy_col and has_doi and pd.notna(df_site.loc[DOI, wy_col]):
+			valid_sites.append(site)
+		else:
+			print(f"Skipping site {site}: missing {wy_col} or DOI {DOI} value")
+
+	sitedict = {site: sitedict[site] for site in valid_sites}
+	gdf_in_aoi = gdf_in_aoi[gdf_in_aoi["code"].isin(valid_sites)].copy()
+
+	if not sitedict:
+		raise RuntimeError("No selected sites have both WY data and DOI coverage for plotting.")
+
+	SNOTEL_Analyzer.SNOTELPlots(sitedict, gdf_in_aoi, WY, WATERSHED, AOI_NAME, DOI)
+	SNOTEL_Analyzer.catchmentSNOTELAnalysis(sitedict, WY, WATERSHED, AOI_NAME, DOI)
+
+	summary_rows = []
+	for site, df_site in sitedict.items():
+		stats = df_site[["min", "median", "max"]].copy()
+		summary_rows.append(
+			{
+				"site": site,
+				"non_zero_days_max_gt0": int((stats["max"] > 0).sum()),
+				"max_swe_in": round(float(stats["max"].max()), 2),
+				"median_peak_in": round(float(stats["median"].max()), 2),
+			}
+		)
+
+	print("\nSanity check summary:")
+	print(pd.DataFrame(summary_rows).sort_values("max_swe_in", ascending=False).to_string(index=False))
+
+
+if __name__ == "__main__":
+	main()
+# Exercise: Catchment delineation, geospatial tools to retrieve site information, automated data collection, and visualization 

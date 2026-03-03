@@ -12,7 +12,7 @@ def SNOTELPlots(sitedict, gdf_in_bbox, WY, watershed, AOI, DOI,plot = True):
     #get the number of rows based on 2 columns
     num_rows = (num_plots + 1) // 2
 
-    title = f'Snow Outlook for {watershed} Basin \n {AOI} for WY {WY}'
+    title = f'Snow Outlook for {watershed} Basin \n {AOI} for Water Year {WY}'
 
     #set the plot up so that it has 2 columns and the number of rows based on the number of sites in the watershed
     #automatically adjust the size of the plot based on the number of rows
@@ -42,7 +42,7 @@ def SNOTELPlots(sitedict, gdf_in_bbox, WY, watershed, AOI, DOI,plot = True):
             axs[i].fill_between(df.index, df['Q10'], df['min'], color = 'red', alpha = opacity, label = 'Q10')
 
             #Plotting year of interest
-            axs[i].plot(df[WYOI], color = 'black', label = f"WY {WY}")
+            axs[i].plot(df[WYOI], color = 'black', label = f"Water Year {WY}")
 
               # Plot vertical line at a specific date
             axs[i].axvline(DOI, color='black', linestyle='--')
@@ -64,7 +64,7 @@ def SNOTELPlots(sitedict, gdf_in_bbox, WY, watershed, AOI, DOI,plot = True):
             medpercPeak = round(doivalue/mpeak *100, 0)
             medperc = round(doivalue/doimed *100, 0)
 
-            textstr = f"DOI: {WY}-{DOI} \n % of median - {medperc}%  \n % of median peak - {medpercPeak}% \n Peak SWE Date: {WYpeakday}  \n Days from Median Peak - {PSWEDiff_day}"
+            textstr = f"DOI: Water Year {WY}, {DOI} \n % of median - {medperc}%  \n % of median peak - {medpercPeak}% \n Peak SWE Date: {WYpeakday}  \n Days from Median Peak - {PSWEDiff_day}"
             props = dict(boxstyle='round', facecolor='white', alpha=0.5)
             axs[i].text(0.05, 0.95, textstr, transform=axs[i].transAxes, fontsize=6,
                     verticalalignment='top', bbox=props)
@@ -107,7 +107,7 @@ def catchmentSNOTELAnalysis(sitedict, WY, watershed, AOI, DOI,plot = True):
         # Calculate the mean
         mean_value = all_values.mean(axis=1)
         Basin_df[column] = mean_value
-    title = f'Snow Outlook for {watershed} Basin \n {AOI} for WY {WY}'
+    title = f'Snow Outlook for {watershed} Basin \n {AOI} for Water Year {WY}'
     df = Basin_df.copy()
 
 
@@ -129,7 +129,7 @@ def catchmentSNOTELAnalysis(sitedict, WY, watershed, AOI, DOI,plot = True):
     axs.fill_between(df.index, df['Q10'], df['min'], color = 'red', alpha = opacity, label = 'Q10')
 
     #Plotting year of interest
-    axs.plot(df[WYOI], color = 'black', label = f"WY {WY}")
+    axs.plot(df[WYOI], color = 'black', label = f"Water Year {WY}")
 
         # Plot vertical line at a specific date
     axs.axvline(DOI, color='black', linestyle='--')
@@ -151,7 +151,7 @@ def catchmentSNOTELAnalysis(sitedict, WY, watershed, AOI, DOI,plot = True):
     medpercPeak = round(doivalue/mpeak *100, 0)
     medperc = round(doivalue/doimed *100, 0)
 
-    textstr = f"DOI: {WY}-{DOI} \n % of median - {medperc}%  \n % of median peak - {medpercPeak}% \n Peak SWE Date: {WYpeakday}  \n Days from Median Peak - {PSWEDiff_day} \n Statistics based on {len(sites)} SNOTEL sites"
+    textstr = f"DOI: Water Year {WY}, {DOI} \n % of median - {medperc}%  \n % of median peak - {medpercPeak}% \n Peak SWE Date: {WYpeakday}  \n Days from Median Peak - {PSWEDiff_day} \n Statistics based on {len(sites)} SNOTEL sites"
     props = dict(boxstyle='round', facecolor='white', alpha=0.5)
     axs.text(0.05, 0.95, textstr, transform=axs.transAxes, fontsize=10,
             verticalalignment='top', bbox=props)

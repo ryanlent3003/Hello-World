@@ -39,7 +39,8 @@ def getSNOTELData(SiteName, SiteID, StateAbb, StartDate, EndDate, OutputFolder):
     df.reset_index(inplace=True, drop=True)
     df["Date"] = pd.to_datetime(df["Date"])
     df.rename(columns={df.columns[1]:'Snow Water Equivalent (m) Start of Day Values'}, inplace=True)
-    df.iloc[:, 1:] = df.iloc[:, 1:].apply(lambda x: pd.to_numeric(x) * 0.0254)  # convert in to m
+    for column in df.columns[1:]:
+        df[column] = pd.to_numeric(df[column], errors='coerce') * 0.0254  # convert in to m
     df['Water_Year'] = pd.to_datetime(df['Date']).map(lambda x: x.year+1 if x.month>9 else x.year)
 
     df.to_csv(f'./{OutputFolder}/df_{SiteID}_{StateAbb}_SNTL.csv', index=False)
@@ -72,7 +73,8 @@ def getCaliSNOTELData(SiteName, SiteID, StartDate, EndDate, OutputFolder):
     df.reset_index(inplace=True, drop=True)
     df["Date"] = pd.to_datetime(df["Date"])
     df.rename(columns={df.columns[1]:'Snow Water Equivalent (m) Start of Day Values'}, inplace=True)
-    df.iloc[:, 1:] = df.iloc[:, 1:].apply(lambda x: pd.to_numeric(x) * 0.0254)  # convert in to m
+    for column in df.columns[1:]:
+        df[column] = pd.to_numeric(df[column], errors='coerce') * 0.0254  # convert in to m
     df['Water_Year'] = pd.to_datetime(df['Date']).map(lambda x: x.year+1 if x.month>9 else x.year)
 
     df.to_csv(f'./{OutputFolder}/df_{SiteID}_{StateAbb}_SNTL.csv', index=False)
